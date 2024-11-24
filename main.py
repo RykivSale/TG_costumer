@@ -13,42 +13,40 @@ import os
 from dotenv import load_dotenv
 from uuid import uuid4
 
-
-# Загрузка переменных окружения из файла .env
-load_dotenv()
-# Настройки бота
-dp = Dispatcher()
-
-# Список костюмов
-costumes = [
-    {
-        "title": "Казачий костюм",
-        "description": "Мужской, полный комплект, 48 размер",
-        "size": "48",
-        "image_url": "https://s2.radikal.cloud/2024/11/21/photo_2024-10-04_12-22-24.jpeg",
-        "code": "COSTUME001",
-    },
-    {
-        "title": "Костюм фаната Нирваны",
-        "description": "Мужской, потрёпанный в боях, без сигареты, 48 размер",
-        "size": "48",
-        "image_url": "https://s2.radikal.cloud/2024/11/21/photo_2024-09-29_19-22-50.jpeg",
-        "code": "COSTUME002",
-    },
-    {
-        "title": "Костюм цыгана",
-        "description": "Мужской, дорогой, 50 размер",
-        "size": "50",
-        "image_url": "https://s2.radikal.cloud/2024/11/21/photo_2024-09-17_21-51-27.jpeg",
-        "code": "COSTUME003",
-    },
-]
+from data.database import DataBase
 
 
 @dp.inline_query()
 async def inline_query_handler(query: InlineQuery):
     query_text = query.query.strip().lower()  # Убираем лишние пробелы и приводим к нижнему регистру
     results = []
+
+    
+     # Список костюмов
+    costumes = [
+        {
+            "title": "Казачий костюм",
+            "description": "Мужской, полный комплект, 48 размер",
+            "size": "48",
+            "image_url": "https://s2.radikal.cloud/2024/11/21/photo_2024-10-04_12-22-24.jpeg",
+            "code": "COSTUME001",
+        },
+        {
+            "title": "Костюм фаната Нирваны",
+            "description": "Мужской, потрёпанный в боях, без сигареты, 48 размер",
+            "size": "48",
+            "image_url": "https://s2.radikal.cloud/2024/11/21/photo_2024-09-29_19-22-50.jpeg",
+            "code": "COSTUME002",
+        },
+        {
+            "title": "Костюм цыгана",
+            "description": "Мужской, дорогой, 50 размер",
+            "size": "50",
+            "image_url": "https://s2.radikal.cloud/2024/11/21/photo_2024-09-17_21-51-27.jpeg",
+            "code": "COSTUME003",
+        },
+    ]
+
 
     # Фильтрация костюмов
     for costume in costumes:
@@ -90,8 +88,18 @@ async def inline_query_handler(query: InlineQuery):
 
 
 async def main():
+    # Загрузка переменных окружения из файла .env
+    load_dotenv()
     TOKEN = os.getenv('BOT_TOKEN')
+    db = DataBase()
     
+
+    # Настройки бота
+    dp = Dispatcher()
+
+   
+
+    dp.startup.register(db.create) # Создаем БД при запуаппппске бота.
     # Регистрация хэндлеров и запуск бота
     bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 

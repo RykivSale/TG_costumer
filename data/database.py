@@ -40,10 +40,20 @@ class DataBase:
         async with self.async_session() as session:
             yield session
 
-    async def init_db(self):
-        """ Инициализация базы данных (создание таблиц) """
-        async with self.engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+            
+    async def create(self) -> None:
+        try:
+            async with self.engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+        except Exception as e:
+            print(f"An error occurred in create method: {e}")
+
+    async def insert(self, **kwargs) -> None:
+        try:
+            async with self.async_session.begin() as session:
+                session.add(Users(**kwargs))
+        except Exception as e:
+            print(f"An error occurred in insert method: {e}")
 
 class UserCRUD:
 
