@@ -8,7 +8,7 @@ from uuid import uuid4
 from sqlalchemy import select, or_, update, delete, join
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
-from data.models import Costumes, UserCostumes, Cart, Users, ReturnRequest, Role
+from data.models import Costumes, Cart, Users, ReturnRequest, Role
 from datetime import datetime, timedelta
 
 router = Router()
@@ -176,15 +176,6 @@ async def process_rent_confirmation(message: Message, state: FSMContext, db: Dat
                 quantity=Costumes.quantity - 1
             )
             await session.execute(stmt)
-
-            # Создаем запись об аренде
-            new_rent = UserCostumes(
-                user_id=message.from_user.id,
-                costume_id=costume.id,
-                rent_date=datetime.now(),
-                returned=False
-            )
-            session.add(new_rent)
 
             # Создаем запись в корзине
             new_cart_item = Cart(
@@ -366,7 +357,15 @@ async def process_return_confirmation(callback: CallbackQuery, state: FSMContext
             )
             session.add(new_return_request)
 
-            # Удаляем костюм из корзины
+            # Увеличиваем количество костюмов
+            stmt = update(Costumes).where(
+                Costumes.id == costume_id
+            ).values(
+                quantity=Costumes.quantity + 1
+            )
+            await session.execute(stmt)
+
+            # Удаляем запись из корзины
             stmt = delete(Cart).where(
                 Cart.user_id == callback.from_user.id,
                 Cart.costume_id == costume_id
@@ -697,46 +696,45 @@ async def debtors_list(message: Message, db: DataBase):
 
     # Получаем все активные аренды костюмов
     async with db.async_session() as session:
-        query = select(UserCostumes, Users, Costumes).join(
-            Users, UserCostumes.user_id == Users.id
-        ).join(
-            Costumes, UserCostumes.costume_id == Costumes.id
-        ).where(
-            UserCostumes.returned == False  # Только невозвращенные костюмы
+        # Выбираем только те костюмы, которые еще не возвращены
+        query = (
+            select(Users, Costumes, Cart)
+            .join(Cart, Users.id == Cart.user_id)
+            .join(Costumes, Cart.costume_id == Costumes.id)
         )
+        
         result = await session.execute(query)
         rentals = result.all()
 
         if not rentals:
-            await message.answer("🎉 Отлично! На данный момент арендованных костюмов нет!")
+            await message.answer("🎉 Отлично! На данный момент нет арендованных костюмов!")
             return
 
         # Группируем костюмы по пользователям
-        user_rentals = {}
-        for rental, user, costume in rentals:
-            if user.id not in user_rentals:
-                user_rentals[user.id] = {
-                    'user': user,
-                    'rentals': []
-                }
-            user_rentals[user.id]['rentals'].append((rental, costume))
+        current_user = None
+        response_text = "👥 Список арендованных костюмов:\n\n"
 
-        # Формируем красивый текст со списком должников и их костюмов
-        response_text = "👥 Список людей с арендованными костюмами:\n\n"
+        for user, costume, cart in rentals:
+            # Если это новый пользователь, добавляем его информацию
+            if current_user != user.id:
+                if current_user is not None:
+                    response_text += "➖➖➖➖➖➖➖➖➖➖\n"
+                current_user = user.id
+                response_text += f"👤 *{user.full_name}*\n📱 Телефон: {user.phone}\n📋 Костюмы:\n"
+
+            # Добавляем информацию о костюме
+            days_owned = (datetime.now() - cart.created_at).days + 1
+            response_text += (
+                f"  • {costume.name}\n"
+                f"    ⏳ Дней в аренде: {days_owned}\n"
+                f"    📅 Получен: {cart.created_at.strftime('%d.%m.%Y')}\n"
+            )
+
+        response_text += "➖➖➖➖➖➖➖➖➖➖"
         
-        for user_data in user_rentals.values():
-            user = user_data['user']
-            response_text += f"👤 *{user.full_name}*\n📱 Телефон: {user.phone}\n"
-            response_text += "Костюмы:\n"
-            
-            for rental, costume in user_data['rentals']:
-                days_owned = (datetime.now() - rental.rent_date).days
-                response_text += (
-                    f"  👔 {costume.name}\n"
-                    f"  ⏳ Дней в аренде: {days_owned}\n"
-                    f"  📅 Дата получения: {rental.rent_date.strftime('%d.%m.%Y')}\n"
-                )
-            
-            response_text += "➖➖➖➖➖➖➖➖➖➖\n"
-
-        await message.answer(response_text, parse_mode="Markdown")
+        # Отправляем сообщение частями, если оно слишком длинное
+        if len(response_text) > 4096:
+            for x in range(0, len(response_text), 4096):
+                await message.answer(response_text[x:x+4096], parse_mode="Markdown")
+        else:
+            await message.answer(response_text, parse_mode="Markdown")

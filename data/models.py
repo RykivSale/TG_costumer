@@ -25,7 +25,6 @@ class Users(Base):
 
     # Связь с корзиной
     cart_items = relationship("Cart", back_populates="user")
-    costumes = relationship("UserCostumes", back_populates="user")
     return_requests = relationship("ReturnRequest", back_populates="user")
 
 # Сущность костюмов
@@ -41,7 +40,6 @@ class Costumes(Base):
 
     # Связь с корзиной
     cart_items = relationship("Cart", back_populates="costume")
-    users = relationship("UserCostumes", back_populates="costume")
     return_requests = relationship("ReturnRequest", back_populates="costume")
 
 # Сущность корзины (пользователь-костюм)
@@ -56,19 +54,6 @@ class Cart(Base):
     # Роли в связи
     user = relationship("Users", back_populates="cart_items")
     costume = relationship("Costumes", back_populates="cart_items")
-
-# Сущность связи пользователей с костюмами
-class UserCostumes(Base):
-    __tablename__ = 'user_costumes'
-    
-    id = Column(Integer, primary_key=True)
-    user_id = Column(BigInteger, ForeignKey('users.id'))
-    costume_id = Column(BigInteger, ForeignKey('costumes.id'))
-    rent_date = Column(DateTime, default=datetime.now)
-    returned = Column(Boolean, default=False)
-    
-    user = relationship("Users", back_populates="costumes")
-    costume = relationship("Costumes", back_populates="users")
 
 # Сущность заявок на возврат костюмов
 class ReturnRequest(Base):
