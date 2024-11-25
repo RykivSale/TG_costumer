@@ -26,3 +26,10 @@ class Menu(StatesGroup):
 class ReturnRequestAdmin(StatesGroup):
     list_requests = State()
     confirm_request = State()
+
+class AddCostume(StatesGroup):
+    input_name = State()
+    input_size = State()
+    input_quantity = State()
+    input_image = State()
+    confirm = State()

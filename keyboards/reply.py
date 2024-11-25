@@ -23,7 +23,8 @@ admin_menu = ReplyKeyboardMarkup(
             KeyboardButton(text="📤 Сдать костюм")
         ],
         [
-            KeyboardButton(text="👔 Мои костюмы")
+            KeyboardButton(text="👔 Мои костюмы"),
+            KeyboardButton(text="➕ Добавить костюм")
         ],
         [
             KeyboardButton(text="📋 Заявки на сдачу")

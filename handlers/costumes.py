@@ -1,9 +1,10 @@
 from aiogram import Router, F
-from aiogram.types import Message, InlineQuery, InlineQueryResultArticle, InputTextMessageContent, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import Message, InlineQuery, InlineQueryResultArticle, InputTextMessageContent, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, PhotoSize
 from aiogram.fsm.context import FSMContext
 from data.database import DataBase
-from utils.states import CostumeRent, CostumeReturn, ReturnRequestAdmin
+from utils.states import CostumeRent, CostumeReturn, ReturnRequestAdmin, AddCostume
 from keyboards.reply import user_menu, admin_menu, confirm_rent_kb
+from utils.image_handler import process_costume_image
 from uuid import uuid4
 from sqlalchemy import select, or_, update, delete, join
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -738,3 +739,100 @@ async def debtors_list(message: Message, db: DataBase):
                 await message.answer(response_text[x:x+4096], parse_mode="Markdown")
         else:
             await message.answer(response_text, parse_mode="Markdown")
+
+# Обработчик кнопки "➕ Добавить костюм"
+@router.message(F.text == "➕ Добавить костюм")
+async def add_costume_start(message: Message, state: FSMContext, db: DataBase):
+    # Проверяем, является ли пользователь админом
+    async with db.async_session() as session:
+        user = await session.execute(select(Users).where(Users.id == message.from_user.id))
+        user = user.scalar()
+        if not user or user.role != Role.Admin:
+            await message.answer("У вас нет прав для выполнения этой команды.")
+            return
+
+    await message.answer("Введите название костюма:")
+    await state.set_state(AddCostume.input_name)
+
+# Обработчик ввода названия костюма
+@router.message(AddCostume.input_name)
+async def process_costume_name(message: Message, state: FSMContext):
+    await state.update_data(name=message.text)
+    await message.answer("Введите размер костюма:")
+    await state.set_state(AddCostume.input_size)
+
+# Обработчик ввода размера костюма
+@router.message(AddCostume.input_size)
+async def process_costume_size(message: Message, state: FSMContext):
+    await state.update_data(size=message.text)
+    await message.answer("Введите количество (будет создана одна запись):")
+    await state.set_state(AddCostume.input_quantity)
+
+# Обработчик ввода количества костюма
+@router.message(AddCostume.input_quantity)
+async def process_costume_quantity(message: Message, state: FSMContext):
+    try:
+        quantity = int(message.text)
+        if quantity <= 0:
+            await message.answer("Количество должно быть положительным числом. Попробуйте снова:")
+            return
+    except ValueError:
+        await message.answer("Пожалуйста, введите корректное число. Попробуйте снова:")
+        return
+
+    await state.update_data(quantity=quantity)
+    await message.answer("Пожалуйста, отправьте фотографию костюма:")
+    await state.set_state(AddCostume.input_image)
+
+# Обработчик отправки фотографии костюма
+@router.message(AddCostume.input_image, F.photo)
+async def process_costume_image_handler(message: Message, state: FSMContext):
+    # Получаем последнюю (самую большую) версию фото
+    photo = message.photo[-1]
+    
+    # Обрабатываем изображение через нашу функцию-заглушку
+    image_url = await process_costume_image(photo)
+    
+    data = await state.get_data()
+    data['image_url'] = image_url
+    await state.update_data(data)
+
+    # Формируем сообщение для подтверждения
+    confirm_message = (
+        f"Пожалуйста, проверьте данные:\n\n"
+        f"Название: {data['name']}\n"
+        f"Размер: {data['size']}\n"
+        f"Количество: {data['quantity']}\n\n"
+        f"Всё верно? (да/нет)"
+    )
+    
+    await message.answer(confirm_message)
+    await state.set_state(AddCostume.confirm)
+
+# Обработчик ошибки отправки фотографии костюма
+@router.message(AddCostume.input_image)
+async def process_costume_image_error(message: Message):
+    await message.answer("Пожалуйста, отправьте фотографию костюма (не файл и не текст):")
+
+# Обработчик подтверждения добавления костюма
+@router.message(AddCostume.confirm)
+async def process_costume_confirmation(message: Message, state: FSMContext, db: DataBase):
+    if message.text.lower() == "да":
+        data = await state.get_data()
+        
+        async with db.async_session() as session:
+            new_costume = Costumes(
+                name=data['name'],
+                size=data['size'],
+                quantity=data['quantity'],
+                image_url=data['image_url'],
+                costume_uuid=str(uuid4())
+            )
+            session.add(new_costume)
+            await session.commit()
+
+        await message.answer("✅ Костюм успешно добавлен!", reply_markup=admin_menu)
+    else:
+        await message.answer("🚫 Добавление костюма отменено. Спасибо!", reply_markup=admin_menu)
+    
+    await state.clear()
