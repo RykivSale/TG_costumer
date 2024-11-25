@@ -358,14 +358,6 @@ async def process_return_confirmation(callback: CallbackQuery, state: FSMContext
             )
             session.add(new_return_request)
 
-            # Увеличиваем количество костюмов
-            stmt = update(Costumes).where(
-                Costumes.id == costume_id
-            ).values(
-                quantity=Costumes.quantity + 1
-            )
-            await session.execute(stmt)
-
             # Удаляем запись из корзины
             stmt = delete(Cart).where(
                 Cart.user_id == callback.from_user.id,
