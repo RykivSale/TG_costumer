@@ -1,4 +1,4 @@
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.types import Message, InlineQuery, InlineQueryResultArticle, InputTextMessageContent, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, PhotoSize
 from aiogram.fsm.context import FSMContext
 from data.database import DataBase
@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 from data.models import Costumes, Cart, Users, ReturnRequest, Role
 from datetime import datetime, timedelta
+import os
 
 router = Router()
 
@@ -859,12 +860,24 @@ async def process_costume_quantity(message: Message, state: FSMContext):
 
 # Обработчик отправки фотографии костюма
 @router.message(AddCostume.input_image, F.photo)
-async def process_costume_image_handler(message: Message, state: FSMContext):
+async def process_costume_image_handler(message: Message, state: FSMContext, bot: Bot):
     # Получаем последнюю (самую большую) версию фото
     photo = message.photo[-1]
     
-    # Обрабатываем изображение через нашу функцию-заглушку
-    image_url = await process_costume_image(photo)
+    # Скачиваем файл
+    file_info = await bot.get_file(photo.file_id)
+    downloaded_file = await bot.download_file(file_info.file_path)
+    
+    # Сохраняем во временный файл
+    temp_path = f"temp_costume_{uuid4()}.jpg"
+    with open(temp_path, 'wb') as new_file:
+        new_file.write(downloaded_file.read())
+    
+    # Обрабатываем изображение через нашу функцию
+    image_url = await process_costume_image(temp_path)
+    
+    # Удаляем временный файл
+    os.remove(temp_path)
     
     data = await state.get_data()
     data['image_url'] = image_url
