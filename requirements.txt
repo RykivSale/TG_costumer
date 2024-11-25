@@ -11,4 +11,4 @@ pydantic==2.5.2
 typing-extensions==4.9.0
 uuid==1.30
 pillow==10.1.0
-imagekitio==3.1.1
+imagekitio==4.1.0
