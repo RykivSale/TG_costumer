@@ -4,7 +4,7 @@ services:
   bot:
     build: .
     volumes:
-      - .:/app
+      - ./:/app
     depends_on:
       - db
     environment:
@@ -18,15 +18,17 @@ services:
 
   db:
     image: postgres:15-alpine
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+    container_name: tg_costumer_db
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
     ports:
       - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
     restart: always
 
 volumes:
-  postgres_data:
+  db_data:
+    name: tg_costumer_db_data
