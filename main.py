@@ -1,7 +1,6 @@
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.types import (
     InlineQuery,
@@ -12,10 +11,14 @@ import sys
 import os
 from dotenv import load_dotenv
 from uuid import uuid4
-
+import handlers
 from data.database import DataBase
 
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
+# Настройки бота
+dp = Dispatcher()
 @dp.inline_query()
 async def inline_query_handler(query: InlineQuery):
     query_text = query.query.strip().lower()  # Убираем лишние пробелы и приводим к нижнему регистру
@@ -88,25 +91,39 @@ async def inline_query_handler(query: InlineQuery):
 
 
 async def main():
-    # Загрузка переменных окружения из файла .env
-    load_dotenv()
-    TOKEN = os.getenv('BOT_TOKEN')
-    db = DataBase()
-    
+    try:
+        load_dotenv()
+        Token = os.getenv('BOT_TOKEN')
+        bot = Bot(Token)
+        dp = Dispatcher()
+        db = DataBase()
 
-    # Настройки бота
-    dp = Dispatcher()
+        # Добавляем обработчик shutdown для корректного закрытия соединения
+        async def shutdown(dispatcher):
+            await db.close()
+            await bot.session.close()  # Закрываем сессию бота
+        
+        dp.startup.register(db.create)
+        dp.shutdown.register(shutdown)
 
-   
+        # Включаем роутеры
+        dp.include_router(handlers.questrionaire.router)
+        dp.include_router(handlers.costumes.router)  # Возвращаем роутер костюмов
 
-    dp.startup.register(db.create) # Создаем БД при запуаппппске бота.
-    # Регистрация хэндлеров и запуск бота
-    bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+        await bot.delete_webhook(drop_pending_updates=True)
+        await dp.start_polling(bot, db=db)
+        logger.info("Bot started successfully")
+    except Exception as e:
+        logger.error(f"Error in main: {e}")
+        raise
+    finally:
+        await bot.session.close()
 
-    # Запуск диспетчера
-    await dp.start_polling(bot)
-    print("Бот запущен.")
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
-    asyncio.run(main())
+if __name__ == '__main__':
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        raise

@@ -1,179 +1,99 @@
-
 from aiogram import Router, F
-from aiogram.types import Message,KeyboardButton,ReplyKeyboardMarkup
+from aiogram.types import Message
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.enums import ParseMode
-from keyboards.builders import reply_builder
-from keyboards.reply import main, rmk,reply_logined
-
 from data.database import DataBase
 from utils.states import Form
-
+from keyboards.reply import rmk, user_menu, admin_menu
+from data.models import Role
 
 router = Router()
 
 @router.message(CommandStart())
-async def my_form(message: Message, state: FSMContext, db: DataBase):
+async def cmd_start(message: Message, state: FSMContext, db: DataBase):
+    """
+    Начало регистрации пользователя или показ меню
+    """
     try:
-        is_exists = await db.get(message.from_user.id)
-        if is_exists is not None:
-            usr = await db.get(message.from_user.id)
+        # Проверяем, существует ли пользователь
+        user = await db.get(message.from_user.id)
+        if user:
+            # Определяем клавиатуру в зависимости от роли
+            keyboard = admin_menu if user.role == Role.Admin else user_menu
             await message.answer(
-                """
-                Welcome back to Web3Connect! 
-
-Are you ready to continue with more connections?🌍🚀
-                """,
-                reply_markup=reply_logined
+                "Добро пожаловать в главное меню! ",
+                reply_markup=keyboard
             )
-        else:
-            await state.set_state(Form.user_type)
-            await message.answer(
-                """
-                Hey there! Welcome to Web3Connect! 🌍🚀
+            return
 
-You’ve just found the coolest spot to meet and team up with folks in the Web3 world. Let’s quickly set up your profile so you can start making those key connections!
-                """,
-                reply_markup=rmk
-            )
-            await message.answer(
-                """
-                Step 1: What’s Your Scene?
-                
-First up, what do you do? <b>Pick one</b>:""",
-                reply_markup=reply_builder(["Startup", "Investor", "Web3 expert", "Service provider"]),
-                parse_mode=ParseMode.HTML,
-                input_field_placeholder="First up, what do you do?"
-            )
-    except Exception as e:
-        # Вывести ошибку в консоль
-        print(f"An error occurred: {e}")
-
-
-
-@router.message(Form.user_type, F.text.in_(["Startup", "Investor","Web3 expert","Service provider"]))
-async def form_bio(message: Message, state: FSMContext):
-    try:
-        await state.update_data(user_type=message.text)
-        user_data = await state.get_data()
-
-        await state.set_state(Form.bio)
-        await message.answer("""
-<b>Bio Time</b>
-Step 2: Share Your Story
-
-Who are you? Where are you from? Got any cool Web3 stories or skills? This is your spot to shine and tell your future connections what you’re all about.
-
-Example:
-
-Yo! I’m Jordan, hanging in Berlin. Been coding up smart contracts for 3 years and now I’m building a cool dApp for creators. Big on green tech and open-source vibes.
-                             """, reply_markup=rmk, parse_mode=ParseMode.HTML)
-    except Exception as e:
-        # Вывести ошибку в консоль
-        print(f"An error occurred: {e}")
-
-@router.message(Form.user_type)
-async def incorrect_form_user_type(message: Message, state: FSMContext):
-    try:
-        await message.answer(f"Выбери один вариант!")
-    except Exception as e:
-        # Вывести ошибку в консоль
-        print(f"An error occurred: {e}")
-
-
-
-@router.message(Form.bio)
-async def form_goal(message: Message, state: FSMContext):
-    try:
-        await state.update_data(bio=message.text)
-        await state.set_state(Form.goal)
-        await message.answer("""
-<b>Networking Goals</b>
-Step 3: What’s Your Quest?
-
-Why are you here? Looking for partners, funding, wisdom, or something else? Let the crowd know what you’re hunting for to link up with the right tribe.
-
-Example:
-
-On the lookout for believers in my latest venture and keen to swap tips on scaling up in the Web3 space. Also, if you’re into creating more secure digital worlds, let’s chat.
-
-                             """, reply_markup=rmk, parse_mode=ParseMode.HTML)
-    except Exception as e:
-        # Вывести ошибку в консоль
-        print(f"An error occurred: {e}")
-
-
-@router.message(Form.goal)
-async def form_check(message: Message, state: FSMContext):
-    try:
-        await state.update_data(goal=message.text)
-        await state.set_state(Form.check)
-        user_data = await state.get_data()
-
-        await message.answer(f"""
-Just Checking!
-
-You’ve chosen {str(user_data['user_type'])} as your flag. Here’s your story:
-
-
-{user_data['bio']}
-
-And here’s your quest:
-
-{user_data['goal']}
-
-Need to tweak anything? Hit Edit. All good? Press Submit to jump into the Web3Connect world and start networking!
-""",
-                             reply_markup=reply_builder(["Edit", "Submit"]),
-                             parse_mode=ParseMode.HTML,
-                             input_field_placeholder="Press Submit to jump into the Web3Connect world and start networking!")
-    except Exception as e:
-        # Вывести ошибку в консоль
-        print(f"An error occurred: {e}")
-
-@router.message(Form.check, F.text.in_(["Submit"]))
-async def form_submit(message: Message, state: FSMContext, db: DataBase):
-    try:
-        data = await state.get_data()
-        data["id"] = message.from_user.id
-        data["contact_info"] = message.from_user.username
-        data["role"] = 'User'
-        data['rating'] = 1
-        data['user_type'] = data['user_type'].replace(" ", "_")
-        data['status_for_search'] = True
-        await db.insert(**data)
-        await state.clear()
-        await message.answer("""
-<b>Welcome to the Family</b>
-You’re In! 🎉
-
-Your profile’s all set. Dive into discovering connections or hit up your Dashboard anytime to refresh your profile or find something new.
-
-Let’s Make Some Waves! Remember, the best journeys start with connecting dots.
-                             """, reply_markup=reply_logined, parse_mode=ParseMode.HTML)
-    except Exception as e:
-        # Вывести ошибку в консоль
-        print(f"An error occurred: {e}")
-
-
-@router.message(Form.check, F.text.in_(["Edit"]))
-async def form_cancel(message: Message, state: FSMContext):
-    try:
-        await message.answer("""
-                             Let`s try again!
-                             """, reply_markup=rmk, parse_mode=ParseMode.HTML)
-        await state.clear()
-        await state.set_state(Form.user_type)
+        # Начинаем регистрацию
+        await state.set_state(Form.full_name)
         await message.answer(
-            """
-            Step 1: What’s Your Scene?
-            
-First up, what do you do? <b>Pick one</b>:""",
-            reply_markup=reply_builder(["Startup", "Investor", "Web3 expert", "Service provider"]),
-            parse_mode=ParseMode.HTML,
-            input_field_placeholder="First up, what do you do?"
+            "Добро пожаловать! Давайте начнем регистрацию.\n\n"
+            "Как вас зовут? (Введите ФИО)",
+            reply_markup=rmk
         )
     except Exception as e:
-        # Вывести ошибку в консоль
-        print(f"An error occurred: {e}")
+        print(f"Error in cmd_start: {e}")
+
+@router.message(Form.full_name)
+async def process_name(message: Message, state: FSMContext):
+    """
+    Обработка ввода ФИО
+    """
+    try:
+        # Проверяем формат ФИО (минимум два слова)
+        name_parts = message.text.strip().split()
+        if len(name_parts) < 2:
+            await message.answer(
+                "Пожалуйста, введите полное ФИО (минимум имя и фамилия)"
+            )
+            return
+
+        await state.update_data(full_name=message.text.strip())
+        await state.set_state(Form.phone)
+        await message.answer(
+            "Введите ваш номер телефона в формате +7XXXXXXXXXX",
+            reply_markup=rmk
+        )
+    except Exception as e:
+        print(f"Error in process_name: {e}")
+
+@router.message(Form.phone)
+async def process_phone(message: Message, state: FSMContext, db: DataBase):
+    """
+    Обработка ввода номера телефона и завершение регистрации
+    """
+    try:
+        phone = message.text.strip()
+        # Простая валидация номера телефона
+        if not (phone.startswith('+7') and len(phone) == 12 and phone[1:].isdigit()):
+            await message.answer(
+                "Неверный формат номера телефона. Пожалуйста, используйте формат +7XXXXXXXXXX"
+            )
+            return
+
+        # Сохраняем все данные
+        user_data = await state.get_data()
+        user_data.update({
+            "id": message.from_user.id,
+            "phone": phone,
+            "role": Role.User
+        })
+
+        # Сохраняем в базу данных
+        await db.insert(**user_data)
+        await state.clear()
+
+        # Отправляем сообщение об успешной регистрации
+        await message.answer(
+            "Регистрация успешно завершена! \n"
+            "Добро пожаловать в нашу систему!",
+            reply_markup=user_menu
+        )
+    except Exception as e:
+        print(f"Error in process_phone: {e}")
+        await message.answer(
+            "Произошла ошибка при регистрации. Пожалуйста, попробуйте позже или обратитесь в поддержку."
+        )

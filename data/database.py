@@ -1,65 +1,172 @@
 from sqlalchemy import select, insert, update, delete
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession, AsyncEngine
-from sqlalchemy.exc import NoResultFound
-from .models import Base, Users, Costumes, Cart
+from sqlalchemy.exc import NoResultFound, OperationalError
+from .models import Base, Users, Costumes, Cart, Role
 from dotenv import load_dotenv
 import os
+from typing import Any, Awaitable, Callable, Dict
+from aiogram import BaseMiddleware
+from aiogram.types import Message
+import asyncio
+import logging
+import asyncpg
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 class DataBase:
-
     def __init__(self):
         try:
             load_dotenv()
 
-            POSTGRES_USER = os.getenv('POSTGRES_USER')
-            POSTGRES_PASSWORD = os.getenv('POSTGRES_PASSWORD')
-            POSTGRES_DB = os.getenv('POSTGRES_DB')
-            POSTGRES_HOST = os.getenv('POSTGRES_HOST')
-            POSTGRES_PORT = os.getenv('POSTGRES_PORT')
+            self.POSTGRES_USER = os.getenv('POSTGRES_USER')
+            self.POSTGRES_PASSWORD = os.getenv('POSTGRES_PASSWORD')
+            self.POSTGRES_DB = os.getenv('POSTGRES_DB')
+            self.POSTGRES_HOST = os.getenv('POSTGRES_HOST')
+            self.POSTGRES_PORT = os.getenv('POSTGRES_PORT')
 
-            # Пример использования подключения к базе данных
-            DATABASE_URL = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}/bot"
-            
-            # Создание ас
+            if not all([self.POSTGRES_USER, self.POSTGRES_PASSWORD, self.POSTGRES_DB, self.POSTGRES_HOST, self.POSTGRES_PORT]):
+                raise ValueError("Missing required database configuration in .env file")
 
-            # Создание асинхронного движка для работы с базой данных Postgres
-            self.engine: AsyncEngine = create_async_engine(DATABASE_URL)
+            logger.info(f"Connecting to database at {self.POSTGRES_HOST}:{self.POSTGRES_PORT}")
             
-            # Создание асинхронной сессии для выполнения запросов к базе данных
-            self.async_session: AsyncSession = async_sessionmaker(
-                self.engine,
-                expire_on_commit=False,
-                class_=AsyncSession
-            )
+            self.DATABASE_URL = f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+
         except Exception as e:
-            # Вывести ошибку в консоль, если что-то пошло не так при инициализации соединения
-            print(f"An error occurred during database connection initialization: {e}")
+            logger.error(f"Error during database initialization: {e}")
+            raise
 
-    async def get_session(self):
-        """ Получение сессии для выполнения запросов """
-        async with self.async_session() as session:
-            yield session
-
-            
-    async def create(self) -> None:
+    async def ensure_database_exists(self):
         try:
+            # Сначала подключаемся к стандартной базе postgres
+            conn = await asyncpg.connect(
+                user=self.POSTGRES_USER,
+                password=self.POSTGRES_PASSWORD,
+                host=self.POSTGRES_HOST,
+                port=self.POSTGRES_PORT,
+                database='postgres'
+            )
+            
+            # Проверяем существование базы данных
+            exists = await conn.fetchval(
+                "SELECT 1 FROM pg_database WHERE datname = $1",
+                self.POSTGRES_DB
+            )
+            
+            if not exists:
+                # Создаем базу данных, если она не существует
+                await conn.execute(f"CREATE DATABASE {self.POSTGRES_DB}")
+                logger.info(f"Database {self.POSTGRES_DB} created successfully!")
+            else:
+                logger.info(f"Database {self.POSTGRES_DB} already exists.")
+            
+            await conn.close()
+            
+            # Создаем engine только после того, как убедились, что база существует
+            self.engine = create_async_engine(
+                self.DATABASE_URL,
+                echo=True,
+                pool_pre_ping=True,
+                pool_size=5,
+                max_overflow=10,
+                connect_args={
+                    "command_timeout": 60,
+                    "server_settings": {"application_name": "TG_costumer"}
+                }
+            )
+            
+            self.async_session = async_sessionmaker(
+                bind=self.engine,
+                class_=AsyncSession,
+                expire_on_commit=False,
+                autocommit=False,
+                autoflush=False
+            )
+            
+            # Проверяем подключение к новой базе
+            new_conn = await asyncpg.connect(
+                user=self.POSTGRES_USER,
+                password=self.POSTGRES_PASSWORD,
+                host=self.POSTGRES_HOST,
+                port=self.POSTGRES_PORT,
+                database=self.POSTGRES_DB
+            )
+            
+            version = await new_conn.fetchval('SELECT version()')
+            logger.info(f"Successfully connected to database. PostgreSQL version: {version}")
+            
+            await new_conn.close()
+            
+        except Exception as e:
+            logger.error(f"Error ensuring database exists: {e}")
+            raise
+
+    async def create(self):
+        try:
+            # Сначала убеждаемся, что база данных существует
+            await self.ensure_database_exists()
+            
+            # Создаем таблицы
             async with self.engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
+            logger.info("Database tables created successfully!")
         except Exception as e:
-            print(f"An error occurred in create method: {e}")
+            logger.error(f"Error creating database tables: {e}")
+            raise
 
-    async def insert(self, **kwargs) -> None:
+    async def get(self, user_id: int) -> Users | None:
         try:
-            async with self.async_session.begin() as session:
-                session.add(Users(**kwargs))
+            async with self.async_session() as session:
+                result = await session.execute(
+                    select(Users).where(Users.id == user_id)
+                )
+                return result.scalar_one_or_none()
         except Exception as e:
-            print(f"An error occurred in insert method: {e}")
+            logger.error(f"Error getting user: {e}")
+            return None
+
+    async def insert(self, **kwargs):
+        try:
+            async with self.async_session() as session:
+                async with session.begin():
+                    new_user = Users(**kwargs)
+                    session.add(new_user)
+                    await session.commit()
+                    logger.info(f"User {kwargs.get('full_name')} successfully inserted!")
+        except Exception as e:
+            logger.error(f"Error inserting user: {e}")
+            raise
+
+    async def get_session(self) -> AsyncSession:
+        return self.async_session()
+
+    async def close(self):
+        try:
+            logger.info("Closing database connection...")
+            await self.engine.dispose()
+            logger.info("Database connection closed successfully")
+        except Exception as e:
+            logger.error(f"Error closing database connection: {e}")
+            raise
+
+    async def __call__(
+        self,
+        handler: Callable[[Message, Dict[str, Any]], Awaitable[Any]],
+        event: Message,
+        data: Dict[str, Any]
+    ) -> Any:
+        data["db"] = self
+        return await handler(event, data)
+
 
 class UserCRUD:
 
     @staticmethod
-    async def create_user(session: AsyncSession, full_name: str, phone: str, role: str) -> Users:
-        new_user = Users(full_name=full_name, phone=phone, role=role)
+    async def create_user(session: AsyncSession, full_name: str, phone: str) -> Users:
+        new_user = Users(full_name=full_name, phone=phone, role=Role.User)
         session.add(new_user)
         await session.commit()
         return new_user

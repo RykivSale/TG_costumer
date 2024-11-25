@@ -1,34 +1,51 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 
-main = ReplyKeyboardMarkup(
+# Клавиатура для обычных пользователей
+user_menu = ReplyKeyboardMarkup(
     keyboard=[
         [
-            KeyboardButton(text="Моя анкета"),
-            KeyboardButton(text="Статистика")
+            KeyboardButton(text="📥 Получить костюм"),
+            KeyboardButton(text="📤 Сдать костюм")
         ],
         [
-            KeyboardButton(text="Начать поиск")
+            KeyboardButton(text="👔 Мои костюмы")
         ]
     ],
     resize_keyboard=True,
-    one_time_keyboard=True
+    input_field_placeholder="Выберите действие"
+)
+
+# Клавиатура для администраторов
+admin_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [
+            KeyboardButton(text="📥 Получить костюм"),
+            KeyboardButton(text="📤 Сдать костюм")
+        ],
+        [
+            KeyboardButton(text="👔 Мои костюмы")
+        ],
+        [
+            KeyboardButton(text="📋 Заявки на сдачу")
+        ],
+        [
+            KeyboardButton(text="🔍 Поиск костюма"),
+            KeyboardButton(text="👤 Поиск пользователя")
+        ]
+    ],
+    resize_keyboard=True,
+    input_field_placeholder="Выберите действие"
+)
+
+# Клавиатура подтверждения аренды
+confirm_rent_kb = ReplyKeyboardMarkup(
+    keyboard=[
+        [
+            KeyboardButton(text="✅ Да"),
+            KeyboardButton(text="❌ Нет")
+        ]
+    ],
+    resize_keyboard=True
 )
 
 rmk = ReplyKeyboardRemove()
-
-
-reply_logined = ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="Start connecting",callback_data='View')],
-        [KeyboardButton(text="My matches",callback_data='Matches')],
-        [KeyboardButton(text="Connection requests",callback_data='WhoLikes')],
-        [KeyboardButton(text="Profile settings",callback_data='Options')]
-    ],resize_keyboard=True,
-        input_field_placeholder="")
-
-reply_search= ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="👍",callback_data='like')],
-        [KeyboardButton(text="👎",callback_data='dislike')],
-        [KeyboardButton(text="🚫",callback_data='stop')]
-    ],resize_keyboard=True,
-        input_field_placeholder="")
-
