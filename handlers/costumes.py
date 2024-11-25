@@ -9,7 +9,7 @@ from sqlalchemy import select, or_, update, delete, join
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 from data.models import Costumes, UserCostumes, Cart, Users, ReturnRequest, Role
-from datetime import datetime
+from datetime import datetime, timedelta
 
 router = Router()
 
@@ -607,3 +607,136 @@ async def process_return_request_confirmation(callback: CallbackQuery, state: FS
             )
 
     await state.clear()
+
+# Обработчик кнопки "Поиск костюма" (только для админов)
+@router.message(F.text == "🔍 Поиск костюма")
+async def search_costumes(message: Message, db: DataBase):
+    # Проверяем, является ли пользователь администратором
+    user = await db.get(message.from_user.id)
+    if not user or user.role != Role.Admin:
+        await message.answer("У вас нет доступа к этой функции.")
+        return
+
+    # Получаем все активные записи в корзине
+    async with db.async_session() as session:
+        query = select(Cart, Users, Costumes).join(Users, Cart.user_id == Users.id).join(
+            Costumes, Cart.costume_id == Costumes.id
+        )
+        result = await session.execute(query)
+        cart_items = result.all()
+
+        if not cart_items:
+            await message.answer("🎉 Отличные новости! Все костюмы свободны и доступны для аренды!")
+            return
+
+        # Формируем красивый текст со списком занятых костюмов
+        response_text = "📋 Список занятых костюмов:\n\n"
+        
+        for cart, user, costume in cart_items:
+            # Рассчитываем количество дней владения
+            days_owned = (datetime.now() - cart.created_at).days + 1
+            
+            response_text += (
+                f"👔 *{costume.name}*\n"
+                f"👤 Арендатор: {user.full_name}\n"
+                f"📱 Телефон: {user.phone}\n"
+                f"⏳ Дней в аренде: {days_owned}\n"
+                f"📅 Дата получения: {cart.created_at.strftime('%d.%m.%Y')}\n"
+                "➖➖➖➖➖➖➖➖➖➖\n"
+            )
+
+        await message.answer(response_text, parse_mode="Markdown")
+
+# Обработчик кнопки "Арендованные костюмы" (только для админов)
+@router.message(F.text == "👗 Арендованные костюмы")
+async def rented_costumes(message: Message, db: DataBase):
+    # Проверяем, является ли пользователь администратором
+    user = await db.get(message.from_user.id)
+    if not user or user.role != Role.Admin:
+        await message.answer("У вас нет доступа к этой функции.")
+        return
+
+    # Получаем все активные записи в корзине
+    async with db.async_session() as session:
+        query = select(Cart, Users, Costumes).join(Users, Cart.user_id == Users.id).join(
+            Costumes, Cart.costume_id == Costumes.id
+        )
+        result = await session.execute(query)
+        cart_items = result.all()
+
+        if not cart_items:
+            await message.answer("🎉 Отличные новости! Все костюмы свободны и доступны для аренды!")
+            return
+
+        # Формируем красивый текст со списком арендованных костюмов
+        response_text = "👗 Арендованные костюмы:\n\n"
+        
+        for cart, user, costume in cart_items:
+            # Рассчитываем количество дней владения
+            days_owned = (datetime.now() - cart.created_at).days + 1
+            
+            response_text += (
+                f"👔 *{costume.name}*\n"
+                f"👤 Арендатор: {user.full_name}\n"
+                f"📱 Телефон: {user.phone}\n"
+                f"⏳ Дней в аренде: {days_owned}\n"
+                f"📅 Дата получения: {cart.created_at.strftime('%d.%m.%Y')}\n"
+                "➖➖➖➖➖➖➖➖➖➖\n"
+            )
+
+        await message.answer(response_text, parse_mode="Markdown")
+
+# Обработчик кнопки "Должники" (только для админов)
+@router.message(F.text == "💰 Должники")
+async def debtors_list(message: Message, db: DataBase):
+    # Проверяем, является ли пользователь администратором
+    user = await db.get(message.from_user.id)
+    if not user or user.role != Role.Admin:
+        await message.answer("У вас нет доступа к этой функции.")
+        return
+
+    # Получаем все активные аренды костюмов
+    async with db.async_session() as session:
+        query = select(UserCostumes, Users, Costumes).join(
+            Users, UserCostumes.user_id == Users.id
+        ).join(
+            Costumes, UserCostumes.costume_id == Costumes.id
+        ).where(
+            UserCostumes.returned == False  # Только невозвращенные костюмы
+        )
+        result = await session.execute(query)
+        rentals = result.all()
+
+        if not rentals:
+            await message.answer("🎉 Отлично! На данный момент арендованных костюмов нет!")
+            return
+
+        # Группируем костюмы по пользователям
+        user_rentals = {}
+        for rental, user, costume in rentals:
+            if user.id not in user_rentals:
+                user_rentals[user.id] = {
+                    'user': user,
+                    'rentals': []
+                }
+            user_rentals[user.id]['rentals'].append((rental, costume))
+
+        # Формируем красивый текст со списком должников и их костюмов
+        response_text = "👥 Список людей с арендованными костюмами:\n\n"
+        
+        for user_data in user_rentals.values():
+            user = user_data['user']
+            response_text += f"👤 *{user.full_name}*\n📱 Телефон: {user.phone}\n"
+            response_text += "Костюмы:\n"
+            
+            for rental, costume in user_data['rentals']:
+                days_owned = (datetime.now() - rental.rent_date).days
+                response_text += (
+                    f"  👔 {costume.name}\n"
+                    f"  ⏳ Дней в аренде: {days_owned}\n"
+                    f"  📅 Дата получения: {rental.rent_date.strftime('%d.%m.%Y')}\n"
+                )
+            
+            response_text += "➖➖➖➖➖➖➖➖➖➖\n"
+
+        await message.answer(response_text, parse_mode="Markdown")

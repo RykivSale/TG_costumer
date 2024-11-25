@@ -29,8 +29,8 @@ admin_menu = ReplyKeyboardMarkup(
             KeyboardButton(text="📋 Заявки на сдачу")
         ],
         [
-            KeyboardButton(text="🔍 Поиск костюма"),
-            KeyboardButton(text="👤 Поиск пользователя")
+            KeyboardButton(text="👗 Арендованные костюмы"),
+            KeyboardButton(text="💰 Должники")
         ]
     ],
     resize_keyboard=True,

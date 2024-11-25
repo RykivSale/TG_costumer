@@ -51,6 +51,7 @@ class Cart(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)  # Связь с пользователем
     costume_id = Column(BigInteger, ForeignKey('costumes.id', ondelete='CASCADE'), nullable=False)  # Связь с костюмом
+    created_at = Column(DateTime, default=datetime.now, nullable=False)  # Дата создания записи
 
     # Роли в связи
     user = relationship("Users", back_populates="cart_items")
