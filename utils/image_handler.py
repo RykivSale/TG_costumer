@@ -3,12 +3,16 @@ from imagekitio import ImageKit
 from imagekitio.models.UploadFileRequestOptions import UploadFileRequestOptions
 import os
 from uuid import uuid4
+from dotenv import load_dotenv
+
+# Загрузка переменных окружения
+load_dotenv()
 
 # Инициализация ImageKit
 imagekit = ImageKit(
-    private_key='private_rkOl7FZgsJX8dgEq/aYQAd60qKY=',
-    public_key='public_6cvNEFlA7P9+pXI5cJdAlO/vuu4=',
-    url_endpoint='https://ik.imagekit.io/digitalcostumer/'
+    private_key=os.getenv('IMAGEKIT_PRIVATE_KEY'),
+    public_key=os.getenv('IMAGEKIT_PUBLIC_KEY'),
+    url_endpoint=os.getenv('IMAGEKIT_URL_ENDPOINT')
 )
 
 async def process_costume_image(file_path: str) -> str:
