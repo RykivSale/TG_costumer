@@ -26,6 +26,7 @@ class Users(Base):
     # Связь с корзиной
     cart_items = relationship("Cart", back_populates="user")
     costumes = relationship("UserCostumes", back_populates="user")
+    return_requests = relationship("ReturnRequest", back_populates="user")
 
 # Сущность костюмов
 class Costumes(Base):
@@ -41,6 +42,7 @@ class Costumes(Base):
     # Связь с корзиной
     cart_items = relationship("Cart", back_populates="costume")
     users = relationship("UserCostumes", back_populates="costume")
+    return_requests = relationship("ReturnRequest", back_populates="costume")
 
 # Сущность корзины (пользователь-костюм)
 class Cart(Base):
@@ -66,6 +68,20 @@ class UserCostumes(Base):
     
     user = relationship("Users", back_populates="costumes")
     costume = relationship("Costumes", back_populates="users")
+
+# Сущность заявок на возврат костюмов
+class ReturnRequest(Base):
+    __tablename__ = 'return_requests'
+    
+    id = Column(Integer, primary_key=True)
+    request_uuid = Column(UUID(as_uuid=True), unique=True, default=uuid.uuid4)
+    user_id = Column(BigInteger, ForeignKey('users.id'))
+    costume_id = Column(BigInteger, ForeignKey('costumes.id'))
+    status = Column(String, default='pending')  # pending, approved, rejected
+    created_at = Column(DateTime, default=datetime.now)
+    
+    user = relationship("Users", back_populates="return_requests")
+    costume = relationship("Costumes", back_populates="return_requests")
 
 # Уникальные ограничения для таблиц, если необходимо
 UniqueConstraint('phone', name='uq_users_phone')

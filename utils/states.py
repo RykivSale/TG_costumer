@@ -12,7 +12,7 @@ class CostumeRent(StatesGroup):
 class CostumeReturn(StatesGroup):
     select_costume = State()
     confirm_return = State()
-    approve_return = State()  # Для админов
+    approve_return = State()  # Для администраторов
 
 class Search(StatesGroup):
     costume_search = State()
@@ -22,3 +22,7 @@ class Menu(StatesGroup):
     main = State()
     my_costumes = State()
     return_requests = State()  # Для админов
+
+class ReturnRequestAdmin(StatesGroup):
+    list_requests = State()
+    confirm_request = State()
