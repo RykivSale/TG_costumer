@@ -648,35 +648,67 @@ async def rented_costumes(message: Message, db: DataBase):
         await message.answer("У вас нет доступа к этой функции.")
         return
 
-    # Получаем все активные записи в корзине
+    # Получаем все активные записи в корзине и заявки на возврат
     async with db.async_session() as session:
-        query = select(Cart, Users, Costumes).join(Users, Cart.user_id == Users.id).join(
+        # Получаем активные аренды
+        cart_query = select(Cart, Users, Costumes).join(Users, Cart.user_id == Users.id).join(
             Costumes, Cart.costume_id == Costumes.id
         )
-        result = await session.execute(query)
-        cart_items = result.all()
+        cart_result = await session.execute(cart_query)
+        cart_items = cart_result.all()
 
-        if not cart_items:
+        # Получаем заявки на возврат
+        return_query = select(ReturnRequest, Users, Costumes).join(
+            Users, ReturnRequest.user_id == Users.id
+        ).join(
+            Costumes, ReturnRequest.costume_id == Costumes.id
+        ).where(
+            ReturnRequest.status == 'pending'
+        )
+        return_result = await session.execute(return_query)
+        return_requests = return_result.all()
+
+        if not cart_items and not return_requests:
             await message.answer("🎉 Отличные новости! Все костюмы свободны и доступны для аренды!")
             return
 
-        # Формируем красивый текст со списком арендованных костюмов
+        # Формируем текст со списком арендованных костюмов
         response_text = "👗 Арендованные костюмы:\n\n"
         
-        for cart, user, costume in cart_items:
-            # Рассчитываем количество дней владения
-            days_owned = (datetime.now() - cart.created_at).days + 1
-            
-            response_text += (
-                f"👔 *{costume.name}*\n"
-                f"👤 Арендатор: {user.full_name}\n"
-                f"📱 Телефон: {user.phone}\n"
-                f"⏳ Дней в аренде: {days_owned}\n"
-                f"📅 Дата получения: {cart.created_at.strftime('%d.%m.%Y')}\n"
-                "➖➖➖➖➖➖➖➖➖➖\n"
-            )
+        # Добавляем активные аренды
+        if cart_items:
+            response_text += "📦 АКТИВНЫЕ АРЕНДЫ:\n"
+            for cart, user, costume in cart_items:
+                # Рассчитываем количество дней владения
+                days_owned = (datetime.now() - cart.created_at).days + 1
+                
+                response_text += (
+                    f"👔 *{costume.name}*\n"
+                    f"👤 Арендатор: {user.full_name}\n"
+                    f"📱 Телефон: {user.phone}\n"
+                    f"⏳ Дней в аренде: {days_owned}\n"
+                    f"📅 Дата получения: {cart.created_at.strftime('%d.%m.%Y')}\n"
+                    "➖➖➖➖➖➖➖➖➖➖\n"
+                )
 
-        await message.answer(response_text, parse_mode="Markdown")
+        # Добавляем заявки на возврат
+        if return_requests:
+            response_text += "\n📤 ЗАЯВКИ НА ВОЗВРАТ:\n"
+            for return_request, user, costume in return_requests:
+                response_text += (
+                    f"👔 *{costume.name}*\n"
+                    f"👤 От: {user.full_name}\n"
+                    f"📱 Телефон: {user.phone}\n"
+                    f"📝 Статус: Ожидает подтверждения\n"
+                    "➖➖➖➖➖➖➖➖➖➖\n"
+                )
+
+        # Отправляем сообщение частями, если оно слишком длинное
+        if len(response_text) > 4096:
+            for x in range(0, len(response_text), 4096):
+                await message.answer(response_text[x:x+4096], parse_mode="Markdown")
+        else:
+            await message.answer(response_text, parse_mode="Markdown")
 
 # Обработчик кнопки "Должники" (только для админов)
 @router.message(F.text == "💰 Должники")
@@ -687,43 +719,92 @@ async def debtors_list(message: Message, db: DataBase):
         await message.answer("У вас нет доступа к этой функции.")
         return
 
-    # Получаем все активные аренды костюмов
+    # Получаем все активные аренды костюмов и заявки на возврат
     async with db.async_session() as session:
-        # Выбираем только те костюмы, которые еще не возвращены
-        query = (
+        # Получаем активные аренды
+        cart_query = (
             select(Users, Costumes, Cart)
             .join(Cart, Users.id == Cart.user_id)
             .join(Costumes, Cart.costume_id == Costumes.id)
         )
-        
-        result = await session.execute(query)
-        rentals = result.all()
+        cart_result = await session.execute(cart_query)
+        rentals = cart_result.all()
 
-        if not rentals:
+        # Получаем заявки на возврат
+        return_query = (
+            select(Users, Costumes, ReturnRequest)
+            .join(ReturnRequest, Users.id == ReturnRequest.user_id)
+            .join(Costumes, ReturnRequest.costume_id == Costumes.id)
+            .where(ReturnRequest.status == 'pending')
+        )
+        return_result = await session.execute(return_query)
+        return_requests = return_result.all()
+
+        if not rentals and not return_requests:
             await message.answer("🎉 Отлично! На данный момент нет арендованных костюмов!")
             return
 
         # Группируем костюмы по пользователям
-        current_user = None
-        response_text = "👥 Список арендованных костюмов:\n\n"
+        user_rentals = {}
+        user_returns = {}
 
+        # Группируем активные аренды
         for user, costume, cart in rentals:
-            # Если это новый пользователь, добавляем его информацию
-            if current_user != user.id:
-                if current_user is not None:
-                    response_text += "➖➖➖➖➖➖➖➖➖➖\n"
-                current_user = user.id
-                response_text += f"👤 *{user.full_name}*\n📱 Телефон: {user.phone}\n📋 Костюмы:\n"
-
-            # Добавляем информацию о костюме
+            if user.id not in user_rentals:
+                user_rentals[user.id] = {
+                    'user': user,
+                    'costumes': []
+                }
             days_owned = (datetime.now() - cart.created_at).days + 1
-            response_text += (
-                f"  • {costume.name}\n"
-                f"    ⏳ Дней в аренде: {days_owned}\n"
-                f"    📅 Получен: {cart.created_at.strftime('%d.%m.%Y')}\n"
-            )
+            user_rentals[user.id]['costumes'].append({
+                'name': costume.name,
+                'days': days_owned,
+                'date': cart.created_at
+            })
 
-        response_text += "➖➖➖➖➖➖➖➖➖➖"
+        # Группируем заявки на возврат
+        for user, costume, return_request in return_requests:
+            if user.id not in user_returns:
+                user_returns[user.id] = {
+                    'user': user,
+                    'costumes': []
+                }
+            user_returns[user.id]['costumes'].append({
+                'name': costume.name,
+                'status': 'pending'
+            })
+
+        # Формируем текст ответа
+        response_text = "👥 Список должников:\n\n"
+
+        # Добавляем активные аренды
+        if user_rentals:
+            response_text += "📦 АКТИВНЫЕ АРЕНДЫ:\n"
+            for user_data in user_rentals.values():
+                user = user_data['user']
+                response_text += f"👤 *{user.full_name}*\n📱 Телефон: {user.phone}\n📋 Костюмы:\n"
+                
+                for costume in user_data['costumes']:
+                    response_text += (
+                        f"  • {costume['name']}\n"
+                        f"    ⏳ Дней в аренде: {costume['days']}\n"
+                        f"    📅 Получен: {costume['date'].strftime('%d.%m.%Y')}\n"
+                    )
+                response_text += "➖➖➖➖➖➖➖➖➖➖\n"
+
+        # Добавляем заявки на возврат
+        if user_returns:
+            response_text += "\n📤 ЗАЯВКИ НА ВОЗВРАТ:\n"
+            for user_data in user_returns.values():
+                user = user_data['user']
+                response_text += f"👤 *{user.full_name}*\n📱 Телефон: {user.phone}\n📋 Костюмы на возврат:\n"
+                
+                for costume in user_data['costumes']:
+                    response_text += (
+                        f"  • {costume['name']}\n"
+                        f"    📝 Статус: Ожидает подтверждения\n"
+                    )
+                response_text += "➖➖➖➖➖➖➖➖➖➖\n"
         
         # Отправляем сообщение частями, если оно слишком длинное
         if len(response_text) > 4096:
