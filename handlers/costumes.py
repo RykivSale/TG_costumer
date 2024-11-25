@@ -803,10 +803,10 @@ async def process_costume_image_handler(message: Message, state: FSMContext):
         f"Название: {data['name']}\n"
         f"Размер: {data['size']}\n"
         f"Количество: {data['quantity']}\n\n"
-        f"Всё верно? (да/нет)"
+        f"Всё верно?"
     )
     
-    await message.answer(confirm_message)
+    await message.answer(confirm_message, reply_markup=confirm_rent_kb)
     await state.set_state(AddCostume.confirm)
 
 # Обработчик ошибки отправки фотографии костюма
@@ -817,7 +817,7 @@ async def process_costume_image_error(message: Message):
 # Обработчик подтверждения добавления костюма
 @router.message(AddCostume.confirm)
 async def process_costume_confirmation(message: Message, state: FSMContext, db: DataBase):
-    if message.text.lower() == "да":
+    if message.text == "✅ Да":
         data = await state.get_data()
         
         async with db.async_session() as session:
@@ -832,7 +832,10 @@ async def process_costume_confirmation(message: Message, state: FSMContext, db: 
             await session.commit()
 
         await message.answer("✅ Костюм успешно добавлен!", reply_markup=admin_menu)
-    else:
+    elif message.text == "❌ Нет":
         await message.answer("🚫 Добавление костюма отменено. Спасибо!", reply_markup=admin_menu)
+    else:
+        await message.answer("Пожалуйста, используйте кнопки для ответа.", reply_markup=confirm_rent_kb)
+        return
     
     await state.clear()
